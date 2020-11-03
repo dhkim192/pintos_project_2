@@ -17,6 +17,8 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -40,15 +42,16 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  require_file_name = malloc(strlen(file_name) + 1);
   require_file_name = strtok_r(file_name, " ", &ptr);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (require_file_name, PRI_DEFAULT, start_process, fn_copy);
 
+  
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  free(require_file_name);
+    palloc_free_page (fn_copy);
+  
+
   return tid;
 }
 
@@ -63,7 +66,6 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  require_file_name = malloc(strlen(file_name) + 1);
   require_file_name = strtok_r(file_name, " ", &ptr);
 
   /* Initialize interrupt frame and load executable. */
@@ -72,34 +74,22 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (require_file_name, &if_.eip, &if_.esp);
-  free(require_file_name);
 
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
-  else {
+  if (success) {
     int argc = 0;
-    int flag = 0;
-    int dummy = 0;
+    int ret = 0;
 
-    char * temp1 = strtok_r(file_name, " ", &ptr);
+    int address[128];
+    char * temp;
+    temp = require_file_name;
     while (1) {
-      if (temp1 == NULL) {
-	break;
+      if (temp == NULL) {
+        break;
       }
-      temp1 = strtok_r(NULL, " ", &ptr);
-      argc++;
-    }
-
-    int address[argc];
-    char * temp2 = strtok_r(file_name, " ", &ptr);
-    while (1) {
-      if_.esp = if_.esp - strlen(temp2) + 1;
-      address[flag] = (int)if_.esp;
-      memcpy(if_.esp, temp2, strlen(temp2) + 1);
-      temp2 = strtok_r(NULL, " ", &ptr);
-      frag++;
+      if_.esp = if_.esp - (strlen(temp) + 1);
+      address[argc++] = if_.esp;
+      memcpy(if_.esp, temp, strlen(temp) + 1);
+      temp = strtok_r(NULL, " ", &ptr);
     }
 
     while((int)if_.esp % 4 != 0) {
@@ -107,21 +97,28 @@ start_process (void *file_name_)
     }
 
     if_.esp = if_.esp - 4;
-    memcpy(if_.esp, &zero, 4);
+    memcpy(if_.esp, &ret, 4);
 
     for (int k = argc - 1; k >= 0; k--) {
-      if_.esp = if_esp - 4;
+      if_.esp = if_.esp - 4;
       memcpy(if_.esp, &address[k], 4);
     }
 
-    if_.esp = if_esp - 4;
-    memcpy(if_.esp, &(int)if_.esp, 4);
+    if_.esp = if_.esp - 4;
+    int argv = if_.esp + 4;
+    memcpy(if_.esp, &argv, 4);
 
     if_.esp = if_.esp - 4;
     memcpy(if_.esp, &argc, 4);
     
     if_.esp = if_.esp - 4;
-    memcpy(if_.esp, &dummy, 4);
+    memcpy(if_.esp, &ret, 4);
+  }
+
+  /* If load failed, quit. */
+  palloc_free_page (file_name);
+  if (!success) {
+    thread_exit ();
   }
 
   /* Start the user process by simulating a return from an
@@ -144,8 +141,9 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
+  timer_sleep(TIMER_FREQ * 4);
   return -1;
 }
 
