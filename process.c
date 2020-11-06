@@ -17,8 +17,6 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "devices/timer.h"
-#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -31,6 +29,7 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char *fn_copy1;
   char * require_file_name;
   char * ptr;
   tid_t tid;
@@ -42,15 +41,18 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  require_file_name = strtok_r(file_name, " ", &ptr);
+  fn_copy1 = palloc_get_page (0);
+  if (fn_copy1 == NULL)
+    return TID_ERROR;
+  strlcpy (fn_copy1, file_name, PGSIZE);
+  require_file_name = strtok_r(fn_copy1, " ", &ptr);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (require_file_name, PRI_DEFAULT, start_process, fn_copy);
+  palloc_free_page(fn_copy1);
 
-  
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
-  
 
   return tid;
 }
@@ -118,7 +120,7 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) {
-    thread_exit ();
+    exit(-1);
   }
 
   /* Start the user process by simulating a return from an
@@ -143,8 +145,20 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-  timer_sleep(TIMER_FREQ * 4);
-  return -1;
+  struct list_elem * elem = NULL;
+  int result = -1;
+    
+  for (elem = list_begin(&(thread_current()->child_list)); elem != list_end(&(thread_current()->child_list)); elem = list_next(elem)) {
+    struct thread * check_thread = list_entry (elem, struct thread, child_list_elem);
+    if (check_thread->tid == child_tid) {
+      sema_down(&(check_thread->exit_semaphore));
+      result = check_thread->exit_status;
+      list_remove(&(check_thread->child_list_elem));
+      sema_up(&(check_thread->memory_semaphore));
+      break;
+    }
+  }
+  return result;
 }
 
 /* Free the current process's resources. */
@@ -157,7 +171,7 @@ process_exit (void)
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
-  if (pd != NULL) 
+  if (pd != NULL)
     {
       /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
@@ -170,6 +184,11 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  sema_up(&cur->exit_semaphore);
+  if (thread_current()->parent_process != NULL) {
+    sema_down(&cur->memory_semaphore);
+  }
 }
 
 /* Sets up the CPU for running user code in the current
