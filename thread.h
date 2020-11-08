@@ -115,6 +115,8 @@ struct thread
     struct semaphore exit_semaphore;
     struct semaphore memory_semaphore;
     int exit_status;
+
+    struct file * fd[131];
 #endif
 
     /* Owned by thread.c. */
