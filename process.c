@@ -120,6 +120,7 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) {
+    thread_current()->check = true;
     exit(-1);
   }
 
