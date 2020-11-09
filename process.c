@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -51,8 +52,17 @@ process_execute (const char *file_name)
   tid = thread_create (require_file_name, PRI_DEFAULT, start_process, fn_copy);
   palloc_free_page(fn_copy1);
 
+  sema_down(&thread_current()->load_semaphore);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
+
+  struct list_elem * elem = NULL;
+  for (elem = list_begin(&thread_current()->child_list); elem != list_end(&thread_current()->child_list); elem = list_next(elem)) {
+    struct thread * check_thread = list_entry(elem, struct thread, child_list_elem);
+    if (check_thread->check) {
+      return process_wait(tid);
+    }
+  }
 
   return tid;
 }
@@ -119,6 +129,7 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
+  sema_up(&thread_current()->parent_process->load_semaphore);
   if (!success) {
     thread_current()->check = true;
     exit(-1);
@@ -185,6 +196,15 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  struct list_elem* elem = NULL;
+  
+  for (elem = list_begin(&(thread_current()->child_list)); elem != list_end(&(thread_current()->child_list)); elem = list_next(elem)) {
+    struct thread * check_thread = list_entry (elem, struct thread, child_list_elem);
+    check_thread->parent_process = NULL;
+  }
+
+  close_all_files(cur);
 
   sema_up(&cur->exit_semaphore);
   if (thread_current()->parent_process != NULL) {

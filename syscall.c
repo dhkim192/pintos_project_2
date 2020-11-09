@@ -8,6 +8,15 @@
 #include <filesys/filesys.h>
 #include "filesys/off_t.h"
 
+struct lock check_file;
+
+struct file
+  {
+    struct inode *inode;        /* File's inode. */
+    off_t pos;                  /* Current position. */
+    bool deny_write;            /* Has file_deny_write() been called? */
+  };
+
 static void syscall_handler (struct intr_frame *);
 void * check_address(void * address);
 
@@ -29,6 +38,7 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init(&check_file);
 }
 
 static void
@@ -165,16 +175,21 @@ int open(const char * file) {
   int result = -1;
   struct file* fp = filesys_open(file);
   if (!fp) {
+    lock_release(&check_file);
     return result; 
   } else {
     for (int i = 3; i < 131; i++) {
       if (!current_thread->fd[i]) {
+        if (!strcmp(current_thread->name,file)) {
+          file_deny_write(fp);
+        }
         current_thread->fd[i] = fp;
         result = i;
         break;
       }
     }
   }
+  lock_release(&check_file);
   return result;
 }
 
@@ -197,15 +212,19 @@ int read(int fd, void * buffer, unsigned size) {
     }
   } else if (fd > 2) {
     struct thread * current_thread = thread_current();
+    lock_acquire(&check_file);
     if (!current_thread->fd[fd]) {
+      lock_release(&check_file);
       exit(-1);
     }
+    lock_release(&check_file);
     result = file_read(current_thread->fd[fd], buffer, size);
   }
   return result;
 }
 
 int write(int fd, const void * buffer, unsigned size) {
+  lock_acquire(&check_file);
   struct thread * current_thread = thread_current();
   int result = -1;
   if (fd == 1) {
@@ -213,10 +232,15 @@ int write(int fd, const void * buffer, unsigned size) {
     result = size;
   } else if (fd > 2) {
     if (!current_thread->fd[fd]) {
+      lock_release(&check_file);
       exit(-1);
+    }
+    if (current_thread->fd[fd]->deny_write) {
+      file_deny_write(current_thread->fd[fd]);
     }
     result = file_write(current_thread->fd[fd], buffer, size);
   }
+  lock_release(&check_file);
   return result;
 }
 
