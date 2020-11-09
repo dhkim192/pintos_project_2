@@ -114,7 +114,9 @@ struct thread
 
     struct semaphore exit_semaphore;
     struct semaphore memory_semaphore;
+    struct semaphore load_semaphore;
     int exit_status;
+    bool check;
 
     struct file * fd[131];
 #endif

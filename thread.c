@@ -621,7 +621,10 @@ init_thread (struct thread *t, const char *name, int priority)
     t->parent_process = NULL;
   sema_init(&t->exit_semaphore,0);
   sema_init(&t->memory_semaphore,0);
+  sema_init(&t->load_semaphore,0);
   list_push_back(&running_thread()->child_list,&t->child_list_elem);
+
+  t->check = false;
   
   for (int i = 0; i < 131; i++) {                                                         
     t->fd[i] = NULL;                                                                
