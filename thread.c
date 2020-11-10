@@ -622,7 +622,9 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init(&t->exit_semaphore,0);
   sema_init(&t->memory_semaphore,0);
   sema_init(&t->load_semaphore,0);
-  list_push_back(&running_thread()->child_list,&t->child_list_elem);
+  if (t != initial_thread) {
+    list_push_back(&running_thread()->child_list,&t->child_list_elem);
+  }
 
   t->check = false;
   
