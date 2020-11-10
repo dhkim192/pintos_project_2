@@ -127,9 +127,10 @@ start_process (void *file_name_)
     memcpy(if_.esp, &ret, 4);
   }
 
+  sema_up(&thread_current()->parent_process->load_semaphore);
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  sema_up(&thread_current()->parent_process->load_semaphore);
   if (!success) {
     thread_current()->check = true;
     exit(-1);
