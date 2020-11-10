@@ -199,7 +199,7 @@ process_exit (void)
 
   struct list_elem* elem = NULL;
   
-  for (elem = list_begin(&(thread_current()->child_list)); elem != list_end(&(thread_current()->child_list)); elem = list_next(elem)) {
+  for (elem = list_begin(&(cur->child_list)); elem != list_end(&(cur->child_list)); elem = list_next(elem)) {
     struct thread * check_thread = list_entry (elem, struct thread, child_list_elem);
     check_thread->parent_process = NULL;
   }
